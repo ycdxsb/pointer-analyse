@@ -11,9 +11,12 @@
 
 #include <llvm/Support/raw_ostream.h>
 #include <map>
+#include <set>
+#include <vector>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Function.h>
+
 
 using namespace llvm;
 
@@ -83,6 +86,24 @@ void compForwardDataflow(Function *fn,
     DataflowVisitor<T> *visitor,
     typename DataflowResult<T>::Type *result,
     const T & initval) {
+
+    std::set<BasicBlock *> bb_worklist;
+    for(Function::iterator bi=fn->begin(),be=fn->end();bi!=be;bi++){
+        BasicBlock *bb = dyn_cast<BasicBlock>(bi);
+        result->insert(std::make_pair(bb, std::make_pair(initval, initval)));
+        bb_worklist.insert(bb);
+    }
+
+    while(bb_worklist.size()){
+        BasicBlock *bb = *bb_worklist.begin();
+        bb_worklist.erase(bb_worklist.begin());
+
+        T bbinval = (*result)[bb].first;
+        for(auto pi = pred_begin(bb),pe=pred_end(bb);pi!=pe;pi++){
+            BasicBlock *pred = *pi;
+            visitor->merge(&bbinval,(*result)[pred].second);
+        }
+    }
     return;
 }
 /// 
