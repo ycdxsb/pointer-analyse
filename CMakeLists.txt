@@ -7,7 +7,7 @@ set(LLVM_LINK_COMPONENTS
 
 # Support plugins.
 
-add_llvm_tool(pointer-analyse
-  pointer-analyse.cpp
+add_llvm_tool(assignment
+  LLVMAssignment.cpp
   )
 
