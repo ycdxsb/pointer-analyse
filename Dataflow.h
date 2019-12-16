@@ -93,16 +93,21 @@ void compForwardDataflow(Function *fn,
         result->insert(std::make_pair(bb, std::make_pair(initval, initval)));
         bb_worklist.insert(bb);
     }
-
-    while(bb_worklist.size()){
+    // LivenessInfo initval;
+    while(!bb_worklist.empty()){ // 遍历每个BasicBlock
         BasicBlock *bb = *bb_worklist.begin();
         bb_worklist.erase(bb_worklist.begin());
 
-        T bbinval = (*result)[bb].first;
+        T bbinval = (*result)[bb].first; // std::make_pair(initval, initval)[0]
         for(auto pi = pred_begin(bb),pe=pred_end(bb);pi!=pe;pi++){
             BasicBlock *pred = *pi;
-            visitor->merge(&bbinval,(*result)[pred].second);
+            visitor->merge(&bbinval,(*result)[pred].second); //std::make_pair(initval, initval)[1]
         }
+
+        (*result)[bb].first = bbinval;
+
+        visitor->compDFVal(bb, &bbinval, false);
+        
     }
     return;
 }

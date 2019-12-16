@@ -93,7 +93,7 @@ public:
             }
         }
 
-        while(fn_worklist.size()){ //遍历 所有函数
+        while(!fn_worklist.empty()){ //遍历每个Function
             LivenessVisitor visitor;
             LivenessInfo initval;
             Function *func = *(fn_worklist.begin());
