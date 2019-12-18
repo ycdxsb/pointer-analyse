@@ -65,7 +65,7 @@ struct FuncPtrPass : public ModulePass
 {
 private:
     DataflowResult<LivenessInfo>::Type result;
-    FuntionSet fn_worklist;
+    FunctionSet fn_worklist;
 
 public:
     static char ID; // Pass identification, replacement for typeid
@@ -89,16 +89,16 @@ public:
             else
             {
                 errs() << F.getName() << "\n";
-                fn_worklist.push_back(&F);
+                fn_worklist.insert(&F);
             }
         }
-
-        while(!fn_worklist.empty()){ //遍历每个Function
-            LivenessVisitor visitor;
+        LivenessVisitor visitor;
+        while (!fn_worklist.empty())
+        { //遍历每个Function
             LivenessInfo initval;
             Function *func = *(fn_worklist.begin());
             fn_worklist.erase(fn_worklist.begin());
-            compForwardDataflow(func,&visitor,&result,initval);
+            compForwardDataflow(func, &visitor, &result, initval);
         }
         return false;
     }
