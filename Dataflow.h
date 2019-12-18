@@ -19,8 +19,17 @@
 
 using namespace llvm;
 
-///Base dataflow visitor class, defines the dataflow function
 
+///
+/// Dummy class to provide a typedef for the detailed result set
+/// For each basicblock, we compute its input dataflow val and its output dataflow val
+///
+template <class T>
+struct DataflowResult
+{
+    typedef typename std::map<Instruction *, std::pair<T, T>> Type;
+};
+///Base dataflow visitor class, defines the dataflow function
 template <class T>
 class DataflowVisitor
 {
@@ -32,7 +41,7 @@ public:
     /// @block the Basic Block
     /// @dfval the input dataflow value
     /// @isforward true to compute dfval forward, otherwise backward
-    virtual void compDFVal(BasicBlock *block, T *dfval, bool isforward)
+    virtual void compDFVal(BasicBlock *block,typename DataflowResult<T>::Type *result, bool isforward)
     {
         if (isforward == true)
         {
@@ -40,17 +49,19 @@ public:
                  ii != ie; ++ii)
             {
                 Instruction *inst = &*ii;
-                compDFVal(inst, dfval);
+                compDFVal(inst, result);
             }
         }
         else
         {
+            /*
             for (BasicBlock::reverse_iterator ii = block->rbegin(), ie = block->rend();
                  ii != ie; ++ii)
             {
                 Instruction *inst = &*ii;
                 compDFVal(inst, dfval);
             }
+            */
         }
     }
 
@@ -60,7 +71,7 @@ public:
     /// @inst the Instruction
     /// @dfval the input dataflow value
     /// @return true if dfval changed
-    virtual void compDFVal(Instruction *inst, T *dfval) = 0;
+    virtual void compDFVal(Instruction *inst, typename DataflowResult<T>::Type *result) = 0;
 
     ///
     /// Merge of two dfvals, dest will be ther merged result
@@ -69,15 +80,6 @@ public:
     virtual void merge(T *dest, const T &src) = 0;
 };
 
-///
-/// Dummy class to provide a typedef for the detailed result set
-/// For each basicblock, we compute its input dataflow val and its output dataflow val
-///
-template <class T>
-struct DataflowResult
-{
-    typedef typename std::map<Instruction *, std::pair<T, T>> Type;
-};
 
 ///
 /// Compute a forward iterated fixedpoint dataflow function, using a user-supplied
@@ -122,12 +124,10 @@ void compForwardDataflow(Function *fn,
             Instruction *pred_last_inst = &*(--pred->end());
             visitor->merge(&bbinval, (*result)[pred_last_inst].second); //std::make_pair(initval, initval)[1]
         }
-/*
-        //T = LivenessInfo ,bbinval;
-        (*result)[bb].first = bbinval;
 
-        visitor->compDFVal(bb, &bbinval, true);
-        */
+        (*result)[bb_first_inst].first = bbinval;
+        T bb_outval = (*result)[bb_last_inst].second;
+        visitor->compDFVal(bb,result,true);
     }
     return;
 }

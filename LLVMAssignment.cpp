@@ -100,6 +100,7 @@ public:
             fn_worklist.erase(fn_worklist.begin());
             compForwardDataflow(func, &visitor, &result, initval);
         }
+        visitor.printCallFuncResult();
         return false;
     }
 };
