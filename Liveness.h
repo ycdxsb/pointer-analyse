@@ -16,7 +16,7 @@
 #include <llvm/Pass.h>
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/IntrinsicInst.h"
-
+#include <llvm/IR/InstIterator.h>
 #include "Dataflow.h"
 
 #include <vector>
@@ -111,7 +111,7 @@ public:
         }
 
         ValueSet value_worklist;
-        if (!dfval->LiveVars_map[value].empty())
+        if (!(dfval->LiveVars_map[value].empty()))
         {
             value_worklist.insert(dfval->LiveVars_map[value].begin(), dfval->LiveVars_map[value].end());
         }
@@ -126,6 +126,7 @@ public:
             {
                 value_worklist.insert(dfval->LiveVars_map[*(value_worklist.begin())].begin(), dfval->LiveVars_map[*(value_worklist.begin())].end());
             }
+            //前向访问找到所有的func
         }
         return result;
     }
@@ -134,15 +135,58 @@ public:
     {
         LivenessInfo dfval = (*result)[callInst].first;
         FunctionSet callees;
+        //callee被调用者，caller调用者
         callees = getCallees(callInst->getCalledValue(), &dfval);
         call_func_result[callInst].clear();
         call_func_result[callInst].insert(callees.begin(), callees.end());
 
+        /// Return the function called, or null if this is an
+        /// indirect function invocation.
         if (callInst->getCalledFunction() && callInst->getCalledFunction()->isDeclaration())
         {
             (*result)[callInst].second = (*result)[callInst].first;
             return;
         }
+
+        for (auto calleei = callees.begin(), calleee = callees.end(); calleei != calleee; calleei++)
+        {
+            Function *callee = *calleei;
+            // 声明不算
+            if (callee->isDeclaration())
+            {
+                continue;
+            }
+            std::map<Value *, Argument *> ValueToArg_map;
+
+            for (int argi = 0, arge = callInst->getNumArgOperands(); argi < arge; argi++)
+            {
+                Value *caller_arg = callInst->getArgOperand(argi);
+                if (caller_arg->getType()->isPointerTy())
+                {
+                    // only consider pointer
+                    Argument *callee_arg = callee->arg_begin() + argi;
+                    ValueToArg_map.insert(std::make_pair(caller_arg, callee_arg));
+                }
+
+                LivenessInfo &callee_dfval = (*result)[&*inst_begin(callee)].first;
+
+                if(ValueToArg_map.empty()){
+                    // merge()
+                }
+            }
+        }
+    }
+
+    void HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
+    {
+        LivenessInfo dfval = (*result)[storeInst].first;
+
+        ValueSet values;
+
+    }
+
+    void HandleLoadInst(LoadInst *loadInst, DataflowResult<LivenessInfo>::Type *result)
+    {
     }
 
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
@@ -160,6 +204,25 @@ public:
             errs() << "I am in CallInst"
                    << "\n";
             HandleCallInst(callInst, result);
+        }
+        else if (auto storeInst = dyn_cast<StoreInst>(inst))
+        {
+            errs() << "I am in StoreInst"
+                   << "\n";
+            HandleStoreInst(storeInst, result);
+        }
+        else if (auto loadInst = dyn_cast<LoadInst>(inst))
+        {
+            errs() << "I am in LoadInst"
+                   << "\n";
+            HandleLoadInst(loadInst, result);
+        }
+        else
+        {
+            // out equal in
+            errs() << "None of above"
+                   << "\n";
+            (*result)[inst].second = (*result)[inst].first;
         }
         return;
     }
