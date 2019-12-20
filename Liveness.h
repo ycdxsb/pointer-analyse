@@ -314,21 +314,38 @@ public:
 
                 for (auto bi = tmpdfval.LiveVars_feild_map.begin(), be = tmpdfval.LiveVars_feild_map.end(); bi != be; bi++)
                 {
-                   for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
                     {
                         if (bi->second.count(argi->second))
                         {
                             bi->second.erase(argi->second);
                             bi->second.insert(argi->first);
                         }
-                    } 
+                    }
                 }
-
-
             }
         }
 
         (*result)[returnInst].second = dfval;
+    }
+
+    void HandleGetElementPtrInst(GetElementPtrInst *getElementPtrInst, DataflowResult<LivenessInfo>::Type *result)
+    {
+        LivenessInfo dfval = (*result)[getElementPtrInst].first;
+
+        dfval.LiveVars_map[getElementPtrInst].clear();
+
+        Value *pointerOperand = getElementPtrInst->getPointerOperand();
+        if (dfval.LiveVars_map[pointerOperand].empty())
+        {
+            dfval.LiveVars_map[getElementPtrInst].insert(pointerOperand);
+        }
+        else
+        {
+            dfval.LiveVars_map[getElementPtrInst].insert(dfval.LiveVars_map[pointerOperand].begin(), dfval.LiveVars_map[pointerOperand].end());
+        }
+
+        (*result)[getElementPtrInst].second = dfval;
     }
 
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
@@ -364,6 +381,12 @@ public:
             errs() << "I am in ReturnInst"
                    << "\n";
             HandleReturnInst(returnInst, result);
+        }
+        else if (auto getElementPtrInst = dyn_cast<GetElementPtrInst>(inst))
+        {
+            errs() << "I am in GetElementPtrInst"
+                   << "\n";
+            HandleGetElementPtrInst(getElementPtrInst, result);
         }
         else
         {
