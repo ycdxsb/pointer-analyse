@@ -65,9 +65,10 @@ inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)
 class LivenessVisitor : public DataflowVisitor<struct LivenessInfo>
 {
     std::map<CallInst *, FunctionSet> call_func_result;
+    FunctionSet fn_worklist;
 
 public:
-    LivenessVisitor() : call_func_result() {}
+    LivenessVisitor() : call_func_result(), fn_worklist() {}
 
     void merge(LivenessInfo *dest, const LivenessInfo &src) override
     {
@@ -175,7 +176,55 @@ public:
 
                 if (ValueToArg_map.empty())
                 {
-                    // merge()
+                    LivenessInfo tmpdfval = (*result)[callInst].second;
+                    merge(&tmpdfval, (*result)[callInst].first);
+                    continue;
+                }
+
+                // replace LiveVars_map
+                LivenessInfo tmpfdval = (*result)[callInst].first;
+                for (auto bi = tmpfdval.LiveVars_map.begin(), be = tmpfdval.LiveVars_map.end(); bi != be; bi++)
+                {
+                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    {
+                        if (bi->second.count(argi->first) && !isa<Function>(argi->first))
+                        {
+                            // 保留函数
+                            bi->second.erase(argi->first);
+                            bi->second.insert(argi->second);
+                        }
+                    }
+                }
+
+                // replace LiveVars_feild_map
+                for (auto bi = tmpfdval.LiveVars_feild_map.begin(), be = tmpfdval.LiveVars_feild_map.end(); bi != be; bi++)
+                {
+                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    {
+                        if (bi->second.count(argi->first) && !isa<Function>(argi->first))
+                        {
+                            // 保留函数
+                            bi->second.erase(argi->first);
+                            bi->second.insert(argi->second);
+                        }
+                    }
+                }
+
+                for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                {
+                    if (tmpfdval.LiveVars_map.count(argi->second))
+                    {
+                        ValueSet values = tmpfdval.LiveVars_map[argi->second];
+                        tmpfdval.LiveVars_map.erase(argi->second);
+                        tmpfdval.LiveVars_map[argi->first].insert(values.begin(), values.end());
+                    }
+
+                    if (tmpfdval.LiveVars_feild_map.count(argi->second))
+                    {
+                        ValueSet values = tmpfdval.LiveVars_feild_map[argi->second];
+                        tmpfdval.LiveVars_feild_map.erase(argi->second);
+                        tmpfdval.LiveVars_feild_map[argi->first].insert(values.begin(), values.end());
+                    }
                 }
             }
         }
@@ -201,8 +250,8 @@ public:
 
         //ptr
         dfval.LiveVars_map[storeInst->getPointerOperand()].clear();
-        dfval.LiveVars_map[storeInst->getPointerOperand()].insert(values.begin(),values.end());
-        
+        dfval.LiveVars_map[storeInst->getPointerOperand()].insert(values.begin(), values.end());
+
         (*result)[storeInst].second = dfval;
     }
 
@@ -211,9 +260,75 @@ public:
         LivenessInfo dfval = (*result)[loadInst].first;
 
         // ptr
-        dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_map[loadInst->getPointerOperand()].begin(),dfval.LiveVars_map[loadInst->getPointerOperand()].end());
+        dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_map[loadInst->getPointerOperand()].begin(), dfval.LiveVars_map[loadInst->getPointerOperand()].end());
 
         (*result)[loadInst].second = dfval;
+    }
+
+    void HandleReturnInst(ReturnInst *returnInst, DataflowResult<LivenessInfo>::Type *result)
+    {
+        LivenessInfo dfval = (*result)[returnInst].first;
+        Function *callee = returnInst->getFunction();
+        // 前向找到哪个函数调用了return的函数
+
+        for (auto funci = call_func_result.begin(), funce = call_func_result.end(); funci != funce; funci++)
+        {
+            if (funci->second.count(callee))
+            { //funci call callee
+                Function *caller = funci->first->getFunction();
+                std::map<Value *, Argument *> ValueToArg_map;
+                CallInst *callInst = funci->first;
+
+                for (int argi = 0, arge = callInst->getNumArgOperands(); argi < arge; argi++)
+                {
+                    Value *caller_arg = callInst->getArgOperand(argi);
+                    if (caller_arg->getType()->isPointerTy())
+                    {
+                        // only consider pointer
+                        Argument *callee_arg = callee->arg_begin() + argi;
+                        ValueToArg_map.insert(std::make_pair(caller_arg, callee_arg));
+                    }
+                }
+
+                LivenessInfo tmpdfval = (*result)[returnInst].first;
+
+                if (returnInst->getReturnValue() && returnInst->getType()->isPointerTy())
+                {
+                    // 存在返回值，且返回值为指针
+                    ValueSet values = tmpdfval.LiveVars_map[returnInst->getReturnValue()];
+                    tmpdfval.LiveVars_map.erase(returnInst->getReturnValue());
+                    tmpdfval.LiveVars_map[callInst].insert(values.begin(), values.end());
+                }
+
+                for (auto bi = tmpdfval.LiveVars_map.begin(), be = tmpdfval.LiveVars_map.end(); bi != be; bi++)
+                {
+                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    {
+                        if (bi->second.count(argi->second))
+                        {
+                            bi->second.erase(argi->second);
+                            bi->second.insert(argi->first);
+                        }
+                    }
+                }
+
+                for (auto bi = tmpdfval.LiveVars_feild_map.begin(), be = tmpdfval.LiveVars_feild_map.end(); bi != be; bi++)
+                {
+                   for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    {
+                        if (bi->second.count(argi->second))
+                        {
+                            bi->second.erase(argi->second);
+                            bi->second.insert(argi->first);
+                        }
+                    } 
+                }
+
+
+            }
+        }
+
+        (*result)[returnInst].second = dfval;
     }
 
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
@@ -243,6 +358,12 @@ public:
             errs() << "I am in LoadInst"
                    << "\n";
             HandleLoadInst(loadInst, result);
+        }
+        else if (auto returnInst = dyn_cast<ReturnInst>(inst))
+        {
+            errs() << "I am in ReturnInst"
+                   << "\n";
+            HandleReturnInst(returnInst, result);
         }
         else
         {
