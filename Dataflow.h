@@ -50,6 +50,10 @@ public:
             {
                 Instruction *inst = &*ii;
                 compDFVal(inst, result);
+                if (Instruction *next_inst = inst->getNextNode())
+                {
+                    (*result)[next_inst].first = (*result)[inst].second;
+                }
             }
         }
         else

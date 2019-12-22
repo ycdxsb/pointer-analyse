@@ -412,6 +412,12 @@ public:
     {
         if (isa<DbgInfoIntrinsic>(inst))
             return;
+
+        if (isa<IntrinsicInst>(inst)){
+            errs() << "I am in InstrinsicInst"
+                   << "\n";
+        }
+        
         if (auto phiNode = dyn_cast<PHINode>(inst))
         {
             errs() << "I am in PHINode"
@@ -447,6 +453,11 @@ public:
             errs() << "I am in GetElementPtrInst"
                    << "\n";
             HandleGetElementPtrInst(getElementPtrInst, result);
+        }
+        else if (auto *bitCastInst = dyn_cast<BitCastInst>(inst))
+        {
+            errs() << "I am in bitCastInst"
+                   << "\n";
         }
         else
         {
