@@ -40,6 +40,11 @@ struct LivenessInfo
     {
         return LiveVars_map == info.LiveVars_map && LiveVars_feild_map == info.LiveVars_feild_map;
     }
+
+    bool operator!=(const LivenessInfo &info) const
+    {
+        return LiveVars_map != info.LiveVars_map || LiveVars_feild_map != info.LiveVars_feild_map;
+    }
 };
 
 inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)
@@ -171,66 +176,82 @@ public:
                     Argument *callee_arg = callee->arg_begin() + argi;
                     ValueToArg_map.insert(std::make_pair(caller_arg, callee_arg));
                 }
+            }
+            LivenessInfo &callee_dfval = (*result)[&*inst_begin(callee)].first;
 
-                LivenessInfo &callee_dfval = (*result)[&*inst_begin(callee)].first;
+            if (ValueToArg_map.empty())
+            {
+                LivenessInfo tmpdfval = (*result)[callInst].second;
+                merge(&tmpdfval, (*result)[callInst].first);
+                continue;
+            }
 
-                if (ValueToArg_map.empty())
-                {
-                    LivenessInfo tmpdfval = (*result)[callInst].second;
-                    merge(&tmpdfval, (*result)[callInst].first);
-                    continue;
-                }
-
-                // replace LiveVars_map
-                LivenessInfo tmpfdval = (*result)[callInst].first;
-                for (auto bi = tmpfdval.LiveVars_map.begin(), be = tmpfdval.LiveVars_map.end(); bi != be; bi++)
-                {
-                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
-                    {
-                        if (bi->second.count(argi->first) && !isa<Function>(argi->first))
-                        {
-                            // 保留函数
-                            bi->second.erase(argi->first);
-                            bi->second.insert(argi->second);
-                        }
-                    }
-                }
-
-                // replace LiveVars_feild_map
-                for (auto bi = tmpfdval.LiveVars_feild_map.begin(), be = tmpfdval.LiveVars_feild_map.end(); bi != be; bi++)
-                {
-                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
-                    {
-                        if (bi->second.count(argi->first) && !isa<Function>(argi->first))
-                        {
-                            // 保留函数
-                            bi->second.erase(argi->first);
-                            bi->second.insert(argi->second);
-                        }
-                    }
-                }
-
+            // replace LiveVars_map
+            LivenessInfo tmpdfval = (*result)[callInst].first;
+            LivenessInfo &callee_dfval_in = (*result)[&*inst_begin(callee)].first;
+            LivenessInfo old_callee_dfval_in = callee_dfval_in;
+            for (auto bi = tmpdfval.LiveVars_map.begin(), be = tmpdfval.LiveVars_map.end(); bi != be; bi++)
+            {
                 for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
                 {
-                    if (tmpfdval.LiveVars_map.count(argi->second))
+                    if (bi->second.count(argi->first) && !isa<Function>(argi->first))
                     {
-                        ValueSet values = tmpfdval.LiveVars_map[argi->second];
-                        tmpfdval.LiveVars_map.erase(argi->second);
-                        tmpfdval.LiveVars_map[argi->first].insert(values.begin(), values.end());
-                    }
-
-                    if (tmpfdval.LiveVars_feild_map.count(argi->second))
-                    {
-                        ValueSet values = tmpfdval.LiveVars_feild_map[argi->second];
-                        tmpfdval.LiveVars_feild_map.erase(argi->second);
-                        tmpfdval.LiveVars_feild_map[argi->first].insert(values.begin(), values.end());
+                        // 保留函数
+                        bi->second.erase(argi->first);
+                        bi->second.insert(argi->second);
                     }
                 }
+            }
+
+            // replace LiveVars_feild_map
+            for (auto bi = tmpdfval.LiveVars_feild_map.begin(), be = tmpdfval.LiveVars_feild_map.end(); bi != be; bi++)
+            {
+                for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                {
+                    if (bi->second.count(argi->first) && !isa<Function>(argi->first))
+                    {
+                        // 保留函数
+                        bi->second.erase(argi->first);
+                        bi->second.insert(argi->second);
+                    }
+                }
+            }
+
+            for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+            {
+                if (tmpdfval.LiveVars_map.count(argi->second))
+                {
+                    ValueSet values = tmpdfval.LiveVars_map[argi->second];
+                    tmpdfval.LiveVars_map.erase(argi->second);
+                    tmpdfval.LiveVars_map[argi->first].insert(values.begin(), values.end());
+                }
+
+                if (tmpdfval.LiveVars_feild_map.count(argi->second))
+                {
+                    ValueSet values = tmpdfval.LiveVars_feild_map[argi->second];
+                    tmpdfval.LiveVars_feild_map.erase(argi->second);
+                    tmpdfval.LiveVars_feild_map[argi->first].insert(values.begin(), values.end());
+                }
+            }
+
+            for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+            {
+                if (isa<Function>(argi->first))
+                {
+                    tmpdfval.LiveVars_map[argi->second].insert(argi->first);
+                }
+            }
+
+            merge(&callee_dfval_in, tmpdfval);
+            if (old_callee_dfval_in != callee_dfval_in)
+            {
+                fn_worklist.insert(callee);
             }
         }
     }
 
-    void HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
+    void
+    HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[storeInst].first;
 
@@ -248,9 +269,25 @@ public:
             values.insert(dfval.LiveVars_map[storeInst->getValueOperand()].begin(), dfval.LiveVars_map[storeInst->getValueOperand()].end());
         }
 
-        //ptr
-        dfval.LiveVars_map[storeInst->getPointerOperand()].clear();
-        dfval.LiveVars_map[storeInst->getPointerOperand()].insert(values.begin(), values.end());
+        if (auto getElementPtrInst = dyn_cast<GetElementPtrInst>(storeInst->getPointerOperand()))
+        {
+            Value *pointerOperand = getElementPtrInst->getPointerOperand();
+            if (dfval.LiveVars_map[pointerOperand].empty())
+            {
+                dfval.LiveVars_feild_map[pointerOperand].clear();
+                dfval.LiveVars_feild_map[pointerOperand].insert(values.begin(), values.end());
+            }
+            else
+            {
+                dfval;
+            }
+        }
+        else
+        {
+            //ptr
+            dfval.LiveVars_map[storeInst->getPointerOperand()].clear();
+            dfval.LiveVars_map[storeInst->getPointerOperand()].insert(values.begin(), values.end());
+        }
 
         (*result)[storeInst].second = dfval;
     }
@@ -291,6 +328,8 @@ public:
                 }
 
                 LivenessInfo tmpdfval = (*result)[returnInst].first;
+                LivenessInfo &caller_dfval_out = (*result)[callInst].second;
+                LivenessInfo old_caller_dfval_out = caller_dfval_out;
 
                 if (returnInst->getReturnValue() && returnInst->getType()->isPointerTy())
                 {
@@ -322,6 +361,27 @@ public:
                             bi->second.insert(argi->first);
                         }
                     }
+                }
+                for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                {
+                    if (tmpdfval.LiveVars_map.count(argi->second))
+                    {
+                        ValueSet values = tmpdfval.LiveVars_map[argi->second];
+                        tmpdfval.LiveVars_map.erase(argi->second);
+                        tmpdfval.LiveVars_map[argi->first].insert(values.begin(), values.end());
+                    }
+
+                    if (tmpdfval.LiveVars_feild_map.count(argi->second))
+                    {
+                        ValueSet values = tmpdfval.LiveVars_feild_map[argi->second];
+                        tmpdfval.LiveVars_feild_map.erase(argi->second);
+                        tmpdfval.LiveVars_feild_map[argi->first].insert(values.begin(), values.end());
+                    }
+                }
+
+                merge(&caller_dfval_out,tmpdfval);
+                if(caller_dfval_out!=old_caller_dfval_out){
+                    fn_worklist.insert(caller);
                 }
             }
         }
