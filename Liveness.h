@@ -21,7 +21,6 @@
 
 #include <vector>
 #include <map>
-#include <unordered_map>
 #include <set>
 using namespace llvm;
 
@@ -29,7 +28,7 @@ using FunctionSet = std::set<Function *>;
 using ValueSet = std::set<Value *>;
 using LiveVarsToMap = std::map<Value *, ValueSet>;
 
-bool debug = true; //flag for debug
+bool debug = false; //flag for debug
 
 struct LivenessInfo
 {
@@ -267,8 +266,7 @@ public:
     }
 
 
-    void
-    HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
+    void HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[storeInst].first;
 
