@@ -45,6 +45,13 @@ struct LivenessInfo
     {
         return LiveVars_map != info.LiveVars_map || LiveVars_feild_map != info.LiveVars_feild_map;
     }
+
+    LivenessInfo &operator=(const LivenessInfo &other){
+        LiveVars_map = other.LiveVars_map;
+        LiveVars_feild_map = other.LiveVars_feild_map;
+        return *this;
+    } // assign
+
 };
 
 inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)

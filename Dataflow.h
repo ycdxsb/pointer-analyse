@@ -19,7 +19,6 @@
 
 using namespace llvm;
 
-
 ///
 /// Dummy class to provide a typedef for the detailed result set
 /// For each basicblock, we compute its input dataflow val and its output dataflow val
@@ -41,7 +40,7 @@ public:
     /// @block the Basic Block
     /// @dfval the input dataflow value
     /// @isforward true to compute dfval forward, otherwise backward
-    virtual void compDFVal(BasicBlock *block,typename DataflowResult<T>::Type *result, bool isforward)
+    virtual void compDFVal(BasicBlock *block, typename DataflowResult<T>::Type *result, bool isforward)
     {
         if (isforward == true)
         {
@@ -84,7 +83,6 @@ public:
     virtual void merge(T *dest, const T &src) = 0;
 };
 
-
 ///
 /// Compute a forward iterated fixedpoint dataflow function, using a user-supplied
 /// visitor function. Note that the caller must ensure that the function is
@@ -121,7 +119,7 @@ void compForwardDataflow(Function *fn,
         Instruction *bb_first_inst = &*(bb->begin());
         Instruction *bb_last_inst = &*(--bb->end());
         T bbinval = (*result)[bb_first_inst].first; // std::make_pair(initval, initval)[0]
-        
+
         for (auto pi = pred_begin(bb), pe = pred_end(bb); pi != pe; pi++)
         {
             BasicBlock *pred = *pi;
@@ -131,7 +129,15 @@ void compForwardDataflow(Function *fn,
 
         (*result)[bb_first_inst].first = bbinval;
         T bb_outval = (*result)[bb_last_inst].second;
-        visitor->compDFVal(bb,result,true);
+        visitor->compDFVal(bb, result, true);
+        if(bb_outval==(*result)[bb_last_inst].second){
+            continue;
+        }else{
+            for(auto bi=succ_begin(bb),be=succ_end(bb);bi!=be;bi++){
+                bb_worklist.insert(*bi);
+            }
+        }
+
     }
     return;
 }
