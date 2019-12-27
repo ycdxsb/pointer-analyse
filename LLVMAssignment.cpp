@@ -92,6 +92,7 @@ public:
                 fn_worklist.insert(&F);
             }
         }
+
         LivenessVisitor visitor;
         while (!fn_worklist.empty())
         { //遍历每个Function
@@ -99,6 +100,8 @@ public:
             Function *func = *(fn_worklist.begin());
             fn_worklist.erase(fn_worklist.begin());
             compForwardDataflow(func, &visitor, &result, initval);
+            fn_worklist.insert(visitor.fn_worklist.begin(),visitor.fn_worklist.end());
+            visitor.fn_worklist.clear();
         }
         visitor.printCallFuncResult();
         return false;

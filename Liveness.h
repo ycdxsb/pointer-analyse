@@ -46,12 +46,12 @@ struct LivenessInfo
         return LiveVars_map != info.LiveVars_map || LiveVars_feild_map != info.LiveVars_feild_map;
     }
 
-    LivenessInfo &operator=(const LivenessInfo &other){
+    LivenessInfo &operator=(const LivenessInfo &other)
+    {
         LiveVars_map = other.LiveVars_map;
         LiveVars_feild_map = other.LiveVars_feild_map;
         return *this;
     } // assign
-    
 };
 
 inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)
@@ -76,10 +76,9 @@ inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)
 
 class LivenessVisitor : public DataflowVisitor<struct LivenessInfo>
 {
+public:
     std::map<CallInst *, FunctionSet> call_func_result;
     FunctionSet fn_worklist;
-
-public:
     LivenessVisitor() : call_func_result(), fn_worklist() {}
 
     void merge(LivenessInfo *dest, const LivenessInfo &src) override
@@ -126,20 +125,22 @@ public:
         }
 
         ValueSet value_worklist;
-        if (!(dfval->LiveVars_map[value].empty()))
+        if (dfval->LiveVars_map.count(value))
         {
             value_worklist.insert(dfval->LiveVars_map[value].begin(), dfval->LiveVars_map[value].end());
         }
 
         while (!value_worklist.empty())
         {
-            if (auto *func = dyn_cast<Function>(*(value_worklist.begin())))
+            Value *v = *(value_worklist.begin());
+            value_worklist.erase(value_worklist.begin());
+            if (auto *func = dyn_cast<Function>(v))
             {
                 result.insert(func);
             }
             else
             {
-                value_worklist.insert(dfval->LiveVars_map[*(value_worklist.begin())].begin(), dfval->LiveVars_map[*(value_worklist.begin())].end());
+                value_worklist.insert(dfval->LiveVars_map[v].begin(), dfval->LiveVars_map[v].end());
             }
             //前向访问找到所有的func
         }
@@ -184,7 +185,6 @@ public:
                     ValueToArg_map.insert(std::make_pair(caller_arg, callee_arg));
                 }
             }
-            LivenessInfo &callee_dfval = (*result)[&*inst_begin(callee)].first;
 
             if (ValueToArg_map.empty())
             {
@@ -226,18 +226,18 @@ public:
 
             for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
             {
-                if (tmpdfval.LiveVars_map.count(argi->second))
+                if (tmpdfval.LiveVars_map.count(argi->first))
                 {
-                    ValueSet values = tmpdfval.LiveVars_map[argi->second];
-                    tmpdfval.LiveVars_map.erase(argi->second);
-                    tmpdfval.LiveVars_map[argi->first].insert(values.begin(), values.end());
+                    ValueSet values = tmpdfval.LiveVars_map[argi->first];
+                    tmpdfval.LiveVars_map.erase(argi->first);
+                    tmpdfval.LiveVars_map[argi->second].insert(values.begin(), values.end());
                 }
 
-                if (tmpdfval.LiveVars_feild_map.count(argi->second))
+                if (tmpdfval.LiveVars_feild_map.count(argi->first))
                 {
-                    ValueSet values = tmpdfval.LiveVars_feild_map[argi->second];
-                    tmpdfval.LiveVars_feild_map.erase(argi->second);
-                    tmpdfval.LiveVars_feild_map[argi->first].insert(values.begin(), values.end());
+                    ValueSet values = tmpdfval.LiveVars_feild_map[argi->first];
+                    tmpdfval.LiveVars_feild_map.erase(argi->first);
+                    tmpdfval.LiveVars_feild_map[argi->second].insert(values.begin(), values.end());
                 }
             }
 
@@ -286,7 +286,13 @@ public:
             }
             else
             {
-                dfval;
+                ValueSet &tmp = dfval.LiveVars_map[pointerOperand];
+                for (auto tmpi = tmp.begin(), tmpe = tmp.end(); tmpi != tmpe; tmpi++)
+                {
+                    Value *v = *tmpi;
+                    dfval.LiveVars_feild_map[v].clear();
+                    dfval.LiveVars_feild_map[v].insert(values.begin(), values.end());
+                }
             }
         }
         else
@@ -303,15 +309,28 @@ public:
     {
         LivenessInfo dfval = (*result)[loadInst].first;
 
-        // ptr
-        dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_map[loadInst->getPointerOperand()].begin(), dfval.LiveVars_map[loadInst->getPointerOperand()].end());
-
+        dfval.LiveVars_map[loadInst].clear();
+        if (auto *getElementPtrInst = dyn_cast<GetElementPtrInst>(loadInst->getPointerOperand()))
+        {
+            ValueSet &values = dfval.LiveVars_map[getElementPtrInst->getPointerOperand()];
+            for (auto valuei = values.begin(), valuee = values.end(); valuei != valuee; valuei++)
+            {
+                Value *v = *valuei;
+                dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_feild_map[v].begin(), dfval.LiveVars_feild_map[v].end());
+            }
+        }
+        else
+        {
+            // ptr
+            dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_map[loadInst->getPointerOperand()].begin(), dfval.LiveVars_map[loadInst->getPointerOperand()].end());
+        }
         (*result)[loadInst].second = dfval;
     }
 
     void HandleReturnInst(ReturnInst *returnInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[returnInst].first;
+
         Function *callee = returnInst->getFunction();
         // 前向找到哪个函数调用了return的函数
 
@@ -386,8 +405,9 @@ public:
                     }
                 }
 
-                merge(&caller_dfval_out,tmpdfval);
-                if(caller_dfval_out!=old_caller_dfval_out){
+                merge(&caller_dfval_out, tmpdfval);
+                if (caller_dfval_out != old_caller_dfval_out)
+                {
                     fn_worklist.insert(caller);
                 }
             }
@@ -415,16 +435,51 @@ public:
         (*result)[getElementPtrInst].second = dfval;
     }
 
+    void HandleBitCastInst(BitCastInst *bitCastInst, DataflowResult<LivenessInfo>::Type *result)
+    {
+        LivenessInfo dfval = (*result)[bitCastInst].first;
+        (*result)[bitCastInst].second = dfval;
+    }
+
+    void HandleMemCpyInst(MemCpyInst *memCpyInst, DataflowResult<LivenessInfo>::Type *result)
+    {
+        LivenessInfo dfval = (*result)[memCpyInst].first;
+
+        auto *b1 = dyn_cast<BitCastInst>(memCpyInst->getArgOperand(0));
+        auto *b2 = dyn_cast<BitCastInst>(memCpyInst->getArgOperand(1));
+        if(b1 && b2){
+            Value *dest = b1->getOperand(0);
+            Value *src = b2->getOperand(0);
+            dfval.LiveVars_map[dest].clear();
+            dfval.LiveVars_map[dest].insert(dfval.LiveVars_map[src].begin(),dfval.LiveVars_map[src].end());
+
+            dfval.LiveVars_feild_map[dest].clear();
+            dfval.LiveVars_feild_map[dest].insert(dfval.LiveVars_feild_map[src].begin(),dfval.LiveVars_feild_map[src].end());
+        }
+        (*result)[memCpyInst].second =dfval;
+    }
+
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
     {
-        if (isa<DbgInfoIntrinsic>(inst))
+        /*if (isa<DbgInfoIntrinsic>(inst))
             return;
-
-        if (isa<IntrinsicInst>(inst)){
+        */
+        if (isa<IntrinsicInst>(inst))
+        {
             errs() << "I am in InstrinsicInst"
                    << "\n";
+            if (auto *memCpyInst = dyn_cast<MemCpyInst>(inst))
+            {
+                errs() << "I am in MemCpyInst"
+                       << "\n";
+                HandleMemCpyInst(memCpyInst, result);
+            }
+            else
+            {
+                (*result)[inst].second = (*result)[inst].first;
+                return;
+            }
         }
-        errs()<<"test"<<"\n";
         if (auto phiNode = dyn_cast<PHINode>(inst))
         {
             errs() << "I am in PHINode"
@@ -465,6 +520,7 @@ public:
         {
             errs() << "I am in bitCastInst"
                    << "\n";
+            HandleBitCastInst(bitCastInst, result);
         }
         else
         {
