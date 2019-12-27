@@ -74,11 +74,11 @@ public:
 
     bool runOnModule(Module &M) override
     {
-        errs() << "Hello: ";
-        errs().write_escaped(M.getName()) << '\n';
+        //errs() << "Hello: ";
+        //errs().write_escaped(M.getName()) << '\n';
         //        M.dump();
-        M.print(llvm::errs(), nullptr);
-        errs() << "------------------------------\n";
+        //M.print(llvm::errs(), nullptr);
+        //errs() << "------------------------------\n";
 
         for (auto &F : M)
         {
@@ -88,7 +88,7 @@ public:
             }
             else
             {
-                errs() << F.getName() << "\n";
+                //errs() << F.getName() << "\n";
                 fn_worklist.insert(&F);
             }
         }

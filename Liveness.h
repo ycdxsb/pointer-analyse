@@ -28,6 +28,8 @@ using FunctionSet = std::set<Function *>;
 using ValueSet = std::set<Value *>;
 using LiveVarsToMap = std::map<Value *, ValueSet>;
 
+bool debug = false; //flag for debug
+
 struct LivenessInfo
 {
     //std::set<Instruction *> LiveVars; /// Set of variables which are live
@@ -320,7 +322,7 @@ public:
             if (dfval.LiveVars_map[pointerOperand].empty())
             {
                 ValueSet &tmp = dfval.LiveVars_feild_map[pointerOperand];
-                dfval.LiveVars_map[loadInst].insert(tmp.begin(),tmp.end());
+                dfval.LiveVars_map[loadInst].insert(tmp.begin(), tmp.end());
             }
             else
             {
@@ -475,17 +477,16 @@ public:
 
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
     {
-        /*if (isa<DbgInfoIntrinsic>(inst))
-            return;
-        */
+
         if (isa<IntrinsicInst>(inst))
         {
-            errs() << "I am in InstrinsicInst"
-                   << "\n";
             if (auto *memCpyInst = dyn_cast<MemCpyInst>(inst))
             {
-                errs() << "I am in MemCpyInst"
-                       << "\n";
+                if (debug)
+                {
+                    errs() << "I am in MemCpyInst"
+                           << "\n";
+                }
                 HandleMemCpyInst(memCpyInst, result);
             }
             else
@@ -494,53 +495,77 @@ public:
                 return;
             }
         }
-        if (auto phiNode = dyn_cast<PHINode>(inst))
+        else if (auto phiNode = dyn_cast<PHINode>(inst))
         {
-            errs() << "I am in PHINode"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in PHINode"
+                       << "\n";
+            }
             HandlePHINode(phiNode, result);
         }
         else if (auto callInst = dyn_cast<CallInst>(inst))
         {
-            errs() << "I am in CallInst"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in CallInst"
+                       << "\n";
+            }
             HandleCallInst(callInst, result);
         }
         else if (auto storeInst = dyn_cast<StoreInst>(inst))
         {
-            errs() << "I am in StoreInst"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in StoreInst"
+                       << "\n";
+            }
             HandleStoreInst(storeInst, result);
         }
         else if (auto loadInst = dyn_cast<LoadInst>(inst))
         {
-            errs() << "I am in LoadInst"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in LoadInst"
+                       << "\n";
+            }
             HandleLoadInst(loadInst, result);
         }
         else if (auto returnInst = dyn_cast<ReturnInst>(inst))
         {
-            errs() << "I am in ReturnInst"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in ReturnInst"
+                       << "\n";
+            }
             HandleReturnInst(returnInst, result);
         }
         else if (auto getElementPtrInst = dyn_cast<GetElementPtrInst>(inst))
         {
-            errs() << "I am in GetElementPtrInst"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in GetElementPtrInst"
+                       << "\n";
+            }
             HandleGetElementPtrInst(getElementPtrInst, result);
         }
         else if (auto *bitCastInst = dyn_cast<BitCastInst>(inst))
         {
-            errs() << "I am in bitCastInst"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "I am in bitCastInst"
+                       << "\n";
+            }
             HandleBitCastInst(bitCastInst, result);
         }
         else
         {
             // out equal in
-            errs() << "None of above"
-                   << "\n";
+            if (debug)
+            {
+                errs() << "None of above"
+                       << "\n";
+            }
             (*result)[inst].second = (*result)[inst].first;
         }
         return;
@@ -548,30 +573,19 @@ public:
 
     void printCallFuncResult()
     {
-        /*
-        for (auto ii = call_func_result.begin(), ie = call_func_result.end(); ii != ie; ii++)
+        while (!call_func_result.empty())
         {
-            errs() << ii->first->getDebugLoc().getLine() << " : ";
-            for (auto fi = ii->second.begin(), fe = ii->second.end(); fi != fe; fi++)
-            {
-                if (fi != ii->second.begin())
-                {
-                    errs() << ", ";
-                }
-                errs() << (*fi)->getName();
-            }
-            errs() << "\n";
-        }*/
-        while(!call_func_result.empty()){
             int line = call_func_result.begin()->first->getDebugLoc().getLine();
             auto p = call_func_result.begin();
-            for(auto ii = call_func_result.begin(), ie = call_func_result.end(); ii != ie; ii++){
-                if(ii->first->getDebugLoc().getLine()<line){
+            for (auto ii = call_func_result.begin(), ie = call_func_result.end(); ii != ie; ii++)
+            {
+                if (ii->first->getDebugLoc().getLine() < line)
+                {
                     line = ii->first->getDebugLoc().getLine();
                     p = ii;
                 }
             }
-            errs()<< line << " : ";
+            errs() << line << " : ";
             for (auto fi = p->second.begin(), fe = p->second.end(); fi != fe; fi++)
             {
                 if (fi != p->second.begin())
