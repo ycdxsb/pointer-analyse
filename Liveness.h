@@ -46,10 +46,10 @@ struct LivenessInfo
         return LiveVars_map != info.LiveVars_map || LiveVars_feild_map != info.LiveVars_feild_map;
     }
 
-    LivenessInfo &operator=(const LivenessInfo &other)
+    LivenessInfo &operator=(const LivenessInfo &info)
     {
-        LiveVars_map = other.LiveVars_map;
-        LiveVars_feild_map = other.LiveVars_feild_map;
+        LiveVars_map = info.LiveVars_map;
+        LiveVars_feild_map = info.LiveVars_feild_map;
         return *this;
     } // assign
 };
@@ -100,6 +100,10 @@ public:
         dfval.LiveVars_map[phiNode].clear();
         for (Value *value : phiNode->incoming_values())
         {
+            if (isa<ConstantPointerNull>(value))
+            {
+                continue;
+            }
             if (isa<Function>(value))
             {
                 dfval.LiveVars_map[phiNode].insert(value);
@@ -312,11 +316,20 @@ public:
         dfval.LiveVars_map[loadInst].clear();
         if (auto *getElementPtrInst = dyn_cast<GetElementPtrInst>(loadInst->getPointerOperand()))
         {
-            ValueSet &values = dfval.LiveVars_map[getElementPtrInst->getPointerOperand()];
-            for (auto valuei = values.begin(), valuee = values.end(); valuei != valuee; valuei++)
+            Value *pointerOperand = getElementPtrInst->getPointerOperand();
+            if (dfval.LiveVars_map[pointerOperand].empty())
             {
-                Value *v = *valuei;
-                dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_feild_map[v].begin(), dfval.LiveVars_feild_map[v].end());
+                ValueSet &tmp = dfval.LiveVars_feild_map[pointerOperand];
+                dfval.LiveVars_map[loadInst].insert(tmp.begin(),tmp.end());
+            }
+            else
+            {
+                ValueSet &values = dfval.LiveVars_map[getElementPtrInst->getPointerOperand()];
+                for (auto valuei = values.begin(), valuee = values.end(); valuei != valuee; valuei++)
+                {
+                    Value *v = *valuei;
+                    dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_feild_map[v].begin(), dfval.LiveVars_feild_map[v].end());
+                }
             }
         }
         else
@@ -447,16 +460,17 @@ public:
 
         auto *b1 = dyn_cast<BitCastInst>(memCpyInst->getArgOperand(0));
         auto *b2 = dyn_cast<BitCastInst>(memCpyInst->getArgOperand(1));
-        if(b1 && b2){
+        if (b1 && b2)
+        {
             Value *dest = b1->getOperand(0);
             Value *src = b2->getOperand(0);
             dfval.LiveVars_map[dest].clear();
-            dfval.LiveVars_map[dest].insert(dfval.LiveVars_map[src].begin(),dfval.LiveVars_map[src].end());
+            dfval.LiveVars_map[dest].insert(dfval.LiveVars_map[src].begin(), dfval.LiveVars_map[src].end());
 
             dfval.LiveVars_feild_map[dest].clear();
-            dfval.LiveVars_feild_map[dest].insert(dfval.LiveVars_feild_map[src].begin(),dfval.LiveVars_feild_map[src].end());
+            dfval.LiveVars_feild_map[dest].insert(dfval.LiveVars_feild_map[src].begin(), dfval.LiveVars_feild_map[src].end());
         }
-        (*result)[memCpyInst].second =dfval;
+        (*result)[memCpyInst].second = dfval;
     }
 
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
@@ -534,6 +548,7 @@ public:
 
     void printCallFuncResult()
     {
+        /*
         for (auto ii = call_func_result.begin(), ie = call_func_result.end(); ii != ie; ii++)
         {
             errs() << ii->first->getDebugLoc().getLine() << " : ";
@@ -546,6 +561,27 @@ public:
                 errs() << (*fi)->getName();
             }
             errs() << "\n";
+        }*/
+        while(!call_func_result.empty()){
+            int line = call_func_result.begin()->first->getDebugLoc().getLine();
+            auto p = call_func_result.begin();
+            for(auto ii = call_func_result.begin(), ie = call_func_result.end(); ii != ie; ii++){
+                if(ii->first->getDebugLoc().getLine()<line){
+                    line = ii->first->getDebugLoc().getLine();
+                    p = ii;
+                }
+            }
+            errs()<< line << " : ";
+            for (auto fi = p->second.begin(), fe = p->second.end(); fi != fe; fi++)
+            {
+                if (fi != p->second.begin())
+                {
+                    errs() << ", ";
+                }
+                errs() << (*fi)->getName();
+            }
+            errs() << "\n";
+            call_func_result.erase(p);
         }
     }
 };
