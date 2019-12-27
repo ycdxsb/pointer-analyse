@@ -21,6 +21,7 @@
 
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <set>
 using namespace llvm;
 
@@ -28,11 +29,12 @@ using FunctionSet = std::set<Function *>;
 using ValueSet = std::set<Value *>;
 using LiveVarsToMap = std::map<Value *, ValueSet>;
 
-bool debug = false; //flag for debug
+bool debug = true; //flag for debug
 
 struct LivenessInfo
 {
     //std::set<Instruction *> LiveVars; /// Set of variables which are live
+    // p *p **p;
     LiveVarsToMap LiveVars_map;
     LiveVarsToMap LiveVars_feild_map;
     LivenessInfo() : LiveVars_map(), LiveVars_feild_map() {}
@@ -40,12 +42,12 @@ struct LivenessInfo
 
     bool operator==(const LivenessInfo &info) const
     {
-        return LiveVars_map == info.LiveVars_map && LiveVars_feild_map == info.LiveVars_feild_map;
+        return (LiveVars_map == info.LiveVars_map) && (LiveVars_feild_map == info.LiveVars_feild_map);
     }
 
     bool operator!=(const LivenessInfo &info) const
     {
-        return LiveVars_map != info.LiveVars_map || LiveVars_feild_map != info.LiveVars_feild_map;
+        return (LiveVars_map != info.LiveVars_map) || (LiveVars_feild_map != info.LiveVars_feild_map);
     }
 
     LivenessInfo &operator=(const LivenessInfo &info)
@@ -153,6 +155,7 @@ public:
         return result;
     }
 
+    
     void HandleCallInst(CallInst *callInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[callInst].first;
@@ -263,6 +266,7 @@ public:
         }
     }
 
+
     void
     HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
     {
@@ -271,18 +275,15 @@ public:
         ValueSet values;
         if (dfval.LiveVars_map[storeInst->getValueOperand()].empty())
         {
-            // x=1
             values.insert(storeInst->getValueOperand());
         }
         else
         {
-            // y = 1
-            // x = y
-            // insert all
-            values.insert(dfval.LiveVars_map[storeInst->getValueOperand()].begin(), dfval.LiveVars_map[storeInst->getValueOperand()].end());
+            ValueSet &tmp = dfval.LiveVars_map[storeInst->getValueOperand()];
+            values.insert(tmp.begin(), tmp.end());
         }
 
-        if (auto getElementPtrInst = dyn_cast<GetElementPtrInst>(storeInst->getPointerOperand()))
+        if (auto *getElementPtrInst = dyn_cast<GetElementPtrInst>(storeInst->getPointerOperand()))
         {
             Value *pointerOperand = getElementPtrInst->getPointerOperand();
             if (dfval.LiveVars_map[pointerOperand].empty())
@@ -326,22 +327,25 @@ public:
             }
             else
             {
-                ValueSet &values = dfval.LiveVars_map[getElementPtrInst->getPointerOperand()];
+                ValueSet &values = dfval.LiveVars_map[pointerOperand];
                 for (auto valuei = values.begin(), valuee = values.end(); valuei != valuee; valuei++)
                 {
                     Value *v = *valuei;
-                    dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_feild_map[v].begin(), dfval.LiveVars_feild_map[v].end());
+                    ValueSet &tmp = dfval.LiveVars_feild_map[v];
+                    dfval.LiveVars_map[loadInst].insert(tmp.begin(), tmp.end());
                 }
             }
         }
         else
         {
             // ptr
-            dfval.LiveVars_map[loadInst].insert(dfval.LiveVars_map[loadInst->getPointerOperand()].begin(), dfval.LiveVars_map[loadInst->getPointerOperand()].end());
+            ValueSet &tmp = dfval.LiveVars_map[loadInst->getPointerOperand()];
+            dfval.LiveVars_map[loadInst].insert(tmp.begin(), tmp.end());
         }
         (*result)[loadInst].second = dfval;
     }
 
+    /*
     void HandleReturnInst(ReturnInst *returnInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[returnInst].first;
@@ -430,6 +434,89 @@ public:
 
         (*result)[returnInst].second = dfval;
     }
+    */
+   void HandleReturnInst(ReturnInst *returnInst, DataflowResult<LivenessInfo>::Type *result)
+    {
+        LivenessInfo dfval = (*result)[returnInst].first;
+
+        Function *callee = returnInst->getFunction();
+        //前向找到哪个函数调用了return的函数
+        for (auto funci = call_func_result.begin(), funce = call_func_result.end(); funci != funce; funci++)
+        {
+            if (funci->second.count(callee))
+            {// funci call callee
+                CallInst *callInst = funci->first;
+                Function *caller = callInst->getFunction();
+                
+                std::map<Value *, Argument *> ValueToArg_map;
+                for (unsigned argi = 0,arge = callInst->getNumArgOperands(); argi < arge; argi++)
+                {
+                    Value *caller_arg = callInst->getArgOperand(argi);
+                    if (!caller_arg->getType()->isPointerTy())
+                        continue;
+                    Argument *callee_arg = callee->arg_begin() + argi;
+                    ValueToArg_map.insert(std::make_pair(caller_arg, callee_arg));
+                }
+                
+                LivenessInfo tmpdfval = (*result)[returnInst].first;
+                LivenessInfo &caller_dfval_out = (*result)[callInst].second;
+                LivenessInfo old_caller_dfval_out = caller_dfval_out;
+                
+                if (returnInst->getReturnValue() &&
+                    returnInst->getReturnValue()->getType()->isPointerTy())
+                {
+                    ValueSet values = tmpdfval.LiveVars_map[returnInst->getReturnValue()];
+                    tmpdfval.LiveVars_map.erase(returnInst->getReturnValue());
+                    tmpdfval.LiveVars_map[callInst].insert(values.begin(), values.end());
+                }
+                // replace callee arg with caller arg in pt_map and field_pt_map
+                for (auto bi = tmpdfval.LiveVars_map.begin(), be = tmpdfval.LiveVars_map.end();bi != be; bi++)
+                {
+                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    {
+                        if (bi->second.count(argi->second))
+                        {
+                            bi->second.erase(argi->second);
+                            bi->second.insert(argi->first);
+                        }
+                    }
+                }
+                for (auto bi = tmpdfval.LiveVars_feild_map.begin(),be = tmpdfval.LiveVars_feild_map.end();bi != be; bi++)
+                {
+                    for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                    {
+                        if (bi->second.count(argi->second))
+                        {
+                            bi->second.erase(argi->second);
+                            bi->second.insert(argi->first);
+                        }
+                    }
+                }
+                for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
+                {
+                    if (tmpdfval.LiveVars_map.count(argi->second))
+                    {
+                        ValueSet values = tmpdfval.LiveVars_map[argi->second];
+                        tmpdfval.LiveVars_map.erase(argi->second);
+                        tmpdfval.LiveVars_map[argi->first].insert(values.begin(), values.end());
+                    }
+                    if (tmpdfval.LiveVars_feild_map.count(argi->second))
+                    {
+                        ValueSet values = tmpdfval.LiveVars_feild_map[argi->second];
+                        tmpdfval.LiveVars_feild_map.erase(argi->second);
+                        tmpdfval.LiveVars_feild_map[argi->first].insert(values.begin(),values.end());
+                    }
+                }
+
+                merge(&caller_dfval_out, tmpdfval);
+                if (caller_dfval_out != old_caller_dfval_out)
+                {
+                    fn_worklist.insert(caller);
+                }
+            }
+        }
+        (*result)[returnInst].second = dfval;
+    }
 
     void HandleGetElementPtrInst(GetElementPtrInst *getElementPtrInst, DataflowResult<LivenessInfo>::Type *result)
     {
@@ -477,7 +564,6 @@ public:
 
     void compDFVal(Instruction *inst, DataflowResult<LivenessInfo>::Type *result) override
     {
-
         if (isa<IntrinsicInst>(inst))
         {
             if (auto *memCpyInst = dyn_cast<MemCpyInst>(inst))
@@ -495,7 +581,7 @@ public:
                 return;
             }
         }
-        else if (auto phiNode = dyn_cast<PHINode>(inst))
+        else if (auto *phiNode = dyn_cast<PHINode>(inst))
         {
             if (debug)
             {
@@ -504,7 +590,7 @@ public:
             }
             HandlePHINode(phiNode, result);
         }
-        else if (auto callInst = dyn_cast<CallInst>(inst))
+        else if (auto *callInst = dyn_cast<CallInst>(inst))
         {
             if (debug)
             {
@@ -513,7 +599,7 @@ public:
             }
             HandleCallInst(callInst, result);
         }
-        else if (auto storeInst = dyn_cast<StoreInst>(inst))
+        else if (auto *storeInst = dyn_cast<StoreInst>(inst))
         {
             if (debug)
             {
@@ -522,7 +608,7 @@ public:
             }
             HandleStoreInst(storeInst, result);
         }
-        else if (auto loadInst = dyn_cast<LoadInst>(inst))
+        else if (auto *loadInst = dyn_cast<LoadInst>(inst))
         {
             if (debug)
             {
@@ -531,7 +617,7 @@ public:
             }
             HandleLoadInst(loadInst, result);
         }
-        else if (auto returnInst = dyn_cast<ReturnInst>(inst))
+        else if (auto *returnInst = dyn_cast<ReturnInst>(inst))
         {
             if (debug)
             {
@@ -540,7 +626,7 @@ public:
             }
             HandleReturnInst(returnInst, result);
         }
-        else if (auto getElementPtrInst = dyn_cast<GetElementPtrInst>(inst))
+        else if (auto *getElementPtrInst = dyn_cast<GetElementPtrInst>(inst))
         {
             if (debug)
             {
