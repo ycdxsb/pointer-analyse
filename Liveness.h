@@ -51,7 +51,6 @@ struct LivenessInfo
         LiveVars_feild_map = other.LiveVars_feild_map;
         return *this;
     } // assign
-
 };
 
 inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)
