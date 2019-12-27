@@ -51,6 +51,7 @@ struct LivenessInfo
         LiveVars_feild_map = other.LiveVars_feild_map;
         return *this;
     } // assign
+    
 };
 
 inline raw_ostream &operator<<(raw_ostream &out, const LiveVarsToMap &v)
@@ -423,7 +424,7 @@ public:
             errs() << "I am in InstrinsicInst"
                    << "\n";
         }
-        
+        errs()<<"test"<<"\n";
         if (auto phiNode = dyn_cast<PHINode>(inst))
         {
             errs() << "I am in PHINode"
