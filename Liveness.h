@@ -125,43 +125,45 @@ public:
     FunctionSet getCallees(Value *value, LivenessInfo *dfval)
     {
         FunctionSet result;
-        if (auto *func = dyn_cast<Function>(value))
-        {
-            result.insert(func);
-            return result;
-        }
 
-        ValueSet value_worklist;
-        if (dfval->LiveVars_map.count(value))
-        {
-            value_worklist.insert(dfval->LiveVars_map[value].begin(), dfval->LiveVars_map[value].end());
-        }
-
-        while (!value_worklist.empty())
-        {
-            Value *v = *(value_worklist.begin());
-            value_worklist.erase(value_worklist.begin());
-            if (auto *func = dyn_cast<Function>(v))
-            {
-                result.insert(func);
-            }
-            else
-            {
-                value_worklist.insert(dfval->LiveVars_map[v].begin(), dfval->LiveVars_map[v].end());
-            }
-            //前向访问找到所有的func
-        }
         return result;
     }
 
-    
     void HandleCallInst(CallInst *callInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[callInst].first;
 
         FunctionSet callees;
         //callee被调用者，caller调用者
-        callees = getCallees(callInst->getCalledValue(), &dfval);
+        Value *value = callInst->getCalledValue();
+        if (auto *func = dyn_cast<Function>(value))
+        {
+            callees.insert(func);
+        }
+        else
+        {
+            ValueSet value_worklist;
+            if (dfval.LiveVars_map.count(value))
+            {
+                value_worklist.insert(dfval.LiveVars_map[value].begin(), dfval.LiveVars_map[value].end());
+            }
+
+            while (!value_worklist.empty())
+            {
+                Value *v = *(value_worklist.begin());
+                value_worklist.erase(value_worklist.begin());
+                if (auto *func = dyn_cast<Function>(v))
+                {
+                    callees.insert(func);
+                }
+                else
+                {
+                    value_worklist.insert(dfval.LiveVars_map[v].begin(), dfval.LiveVars_map[v].end());
+                }
+                //前向访问找到所有的func
+            }
+        }
+
         call_func_result[callInst].clear();
         call_func_result[callInst].insert(callees.begin(), callees.end());
 
@@ -265,7 +267,6 @@ public:
         }
     }
 
-
     void HandleStoreInst(StoreInst *storeInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[storeInst].first;
@@ -343,7 +344,7 @@ public:
         (*result)[loadInst].second = dfval;
     }
 
-   void HandleReturnInst(ReturnInst *returnInst, DataflowResult<LivenessInfo>::Type *result)
+    void HandleReturnInst(ReturnInst *returnInst, DataflowResult<LivenessInfo>::Type *result)
     {
         LivenessInfo dfval = (*result)[returnInst].first;
 
@@ -352,12 +353,12 @@ public:
         for (auto funci = call_func_result.begin(), funce = call_func_result.end(); funci != funce; funci++)
         {
             if (funci->second.count(callee))
-            {// funci call callee
+            { // funci call callee
                 CallInst *callInst = funci->first;
                 Function *caller = callInst->getFunction();
-                
+
                 std::map<Value *, Argument *> ValueToArg_map;
-                for (unsigned argi = 0,arge = callInst->getNumArgOperands(); argi < arge; argi++)
+                for (unsigned argi = 0, arge = callInst->getNumArgOperands(); argi < arge; argi++)
                 {
                     Value *caller_arg = callInst->getArgOperand(argi);
                     if (!caller_arg->getType()->isPointerTy())
@@ -365,11 +366,11 @@ public:
                     Argument *callee_arg = callee->arg_begin() + argi;
                     ValueToArg_map.insert(std::make_pair(caller_arg, callee_arg));
                 }
-                
+
                 LivenessInfo tmpdfval = (*result)[returnInst].first;
                 LivenessInfo &caller_dfval_out = (*result)[callInst].second;
                 LivenessInfo old_caller_dfval_out = caller_dfval_out;
-                
+
                 if (returnInst->getReturnValue() &&
                     returnInst->getReturnValue()->getType()->isPointerTy())
                 {
@@ -378,7 +379,7 @@ public:
                     tmpdfval.LiveVars_map[callInst].insert(values.begin(), values.end());
                 }
                 // replace callee arg with caller arg in pt_map and field_pt_map
-                for (auto bi = tmpdfval.LiveVars_map.begin(), be = tmpdfval.LiveVars_map.end();bi != be; bi++)
+                for (auto bi = tmpdfval.LiveVars_map.begin(), be = tmpdfval.LiveVars_map.end(); bi != be; bi++)
                 {
                     for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
                     {
@@ -389,7 +390,7 @@ public:
                         }
                     }
                 }
-                for (auto bi = tmpdfval.LiveVars_feild_map.begin(),be = tmpdfval.LiveVars_feild_map.end();bi != be; bi++)
+                for (auto bi = tmpdfval.LiveVars_feild_map.begin(), be = tmpdfval.LiveVars_feild_map.end(); bi != be; bi++)
                 {
                     for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
                     {
@@ -412,7 +413,7 @@ public:
                     {
                         ValueSet values = tmpdfval.LiveVars_feild_map[argi->second];
                         tmpdfval.LiveVars_feild_map.erase(argi->second);
-                        tmpdfval.LiveVars_feild_map[argi->first].insert(values.begin(),values.end());
+                        tmpdfval.LiveVars_feild_map[argi->first].insert(values.begin(), values.end());
                     }
                 }
 
