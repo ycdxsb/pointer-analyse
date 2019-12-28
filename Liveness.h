@@ -103,10 +103,6 @@ public:
         dfval.LiveVars_map[phiNode].clear();
         for (Value *value : phiNode->incoming_values())
         {
-            if (isa<ConstantPointerNull>(value))
-            {
-                continue;
-            }
             if (isa<Function>(value))
             {
                 dfval.LiveVars_map[phiNode].insert(value);
@@ -120,13 +116,6 @@ public:
         }
 
         (*result)[phiNode].second = dfval;
-    }
-
-    FunctionSet getCallees(Value *value, LivenessInfo *dfval)
-    {
-        FunctionSet result;
-
-        return result;
     }
 
     void HandleCallInst(CallInst *callInst, DataflowResult<LivenessInfo>::Type *result)
@@ -213,7 +202,7 @@ public:
                 {
                     if (bi->second.count(argi->first) && !isa<Function>(argi->first))
                     {
-                        // 保留函数
+                        // 函数
                         bi->second.erase(argi->first);
                         bi->second.insert(argi->second);
                     }
@@ -227,7 +216,6 @@ public:
                 {
                     if (bi->second.count(argi->first) && !isa<Function>(argi->first))
                     {
-                        // 保留函数
                         bi->second.erase(argi->first);
                         bi->second.insert(argi->second);
                     }
@@ -378,7 +366,7 @@ public:
                     tmpdfval.LiveVars_map.erase(returnInst->getReturnValue());
                     tmpdfval.LiveVars_map[callInst].insert(values.begin(), values.end());
                 }
-                // replace callee arg with caller arg in pt_map and field_pt_map
+                // // replace LiveVars_map
                 for (auto bi = tmpdfval.LiveVars_map.begin(), be = tmpdfval.LiveVars_map.end(); bi != be; bi++)
                 {
                     for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
@@ -390,6 +378,8 @@ public:
                         }
                     }
                 }
+
+                // replace LiveVars_feild_map
                 for (auto bi = tmpdfval.LiveVars_feild_map.begin(), be = tmpdfval.LiveVars_feild_map.end(); bi != be; bi++)
                 {
                     for (auto argi = ValueToArg_map.begin(), arge = ValueToArg_map.end(); argi != arge; argi++)
@@ -555,7 +545,6 @@ public:
         }
         else
         {
-            // out equal in
             if (debug)
             {
                 errs() << "None of above"
@@ -568,6 +557,7 @@ public:
 
     void printCallFuncResult()
     {
+        // 每次找到行数最小的，输出对应的结果，然后从call_func_result中删除
         while (!call_func_result.empty())
         {
             int line = call_func_result.begin()->first->getDebugLoc().getLine();

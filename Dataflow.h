@@ -44,10 +44,9 @@ public:
     {
         if (isforward == true)
         {
-            for (BasicBlock::iterator ii = block->begin(), ie = block->end();
-                 ii != ie; ++ii)
+            for (BasicBlock::iterator ii = block->begin(), ie = block->end();ii != ie; ii++)
             {
-                Instruction *inst = &*ii;
+                Instruction *inst = dyn_cast<Instruction>(ii);
                 compDFVal(inst, result);
                 if (Instruction *next_inst = inst->getNextNode())
                 {
@@ -116,14 +115,14 @@ void compForwardDataflow(Function *fn,
         BasicBlock *bb = *bb_worklist.begin();
         bb_worklist.erase(bb_worklist.begin());
 
-        Instruction *bb_first_inst = &*(bb->begin());
-        Instruction *bb_last_inst = &*(--bb->end());
+        Instruction *bb_first_inst = dyn_cast<Instruction>(bb->begin());
+        Instruction *bb_last_inst = dyn_cast<Instruction>(--bb->end());
         T bbinval = (*result)[bb_first_inst].first; // std::make_pair(initval, initval)[0]
 
         for (auto pi = pred_begin(bb), pe = pred_end(bb); pi != pe; pi++)
         {
             BasicBlock *pred = *pi;
-            Instruction *pred_last_inst = &*(--pred->end());
+            Instruction *pred_last_inst = dyn_cast<Instruction>(--pred->end());
             visitor->merge(&bbinval, (*result)[pred_last_inst].second); //std::make_pair(initval, initval)[1]
         }
 
